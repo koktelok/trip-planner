@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#0f0f10" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <title>Trip Planner</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin:0; background:#0f0f10; color:#fff; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 20px; margin: 4px 0 12px; }
+    .grid { display:grid; grid-template-columns: 320px 1fr; gap:12px; }
+    .card { background:#17171a; border:1px solid #2a2a2f; border-radius:16px; padding:14px; }
+    .muted { opacity:.75; font-size: 13px; }
+    input, select, button { font-size:16px; }
+    input, select { width:100%; padding:10px 12px; border-radius:12px; border:1px solid #333; background:#0b0b0c; color:#fff; }
+    button { padding:12px 12px; border-radius:12px; border:0; background:#3a7afe; color:#fff; font-weight:800; cursor:pointer; }
+    button.secondary { background:#2b2b30; border:1px solid #3a3a42; font-weight:700; }
+    button.danger { background:#2b1115; border:1px solid #5a1a22; }
+    .row { display:flex; gap:10px; align-items:center; }
+    .row > * { flex: 1; }
+    .list { display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+    .tripItem { display:flex; justify-content:space-between; gap:10px; align-items:center; padding:10px 12px; border-radius:12px; border:1px solid #2a2a2f; background:#0b0b0c; cursor:pointer; }
+    .tripItem.active { border-color:#3a7afe; }
+    .pill { font-size:12px; padding:4px 8px; border-radius:999px; border:1px solid #2a2a2f; background:#0b0b0c; opacity:.9; white-space:nowrap; }
+    .section { margin-top:12px; }
+    .secHead { display:flex; justify-content:space-between; gap:10px; align-items:center; margin-bottom:8px; }
+    .items { display:flex; flex-direction:column; gap:8px; }
+    .item { display:flex; gap:10px; align-items:center; padding:10px 12px; border-radius:12px; border:1px solid #2a2a2f; background:#0b0b0c; }
+    .item.done { opacity:.6; text-decoration: line-through; }
+    .chk { width:22px; height:22px; }
+    .itemName { flex: 1; }
+    .iconBtn { width:auto; padding:10px 12px; }
+    .kpi { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-top:10px; }
+    .k { background:#0b0b0c; border:1px solid #2a2a2f; border-radius:12px; padding:10px; }
+    .k .v { font-weight:900; font-size:16px; }
+    .k .l { opacity:.7; font-size:12px; margin-top:2px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🧳 Trip Planner</h1>
+  <div class="muted">Offline packing list – több utazás, sablonok, checklist. (GitHub Pages + “Add to Home Screen”)</div>
+
+  <div class="grid" style="margin-top:12px;">
+    <!-- LEFT -->
+    <div class="card">
+      <div class="muted">Utasok / Trip lista</div>
+
+      <div class="section">
+        <div class="muted">Új trip</div>
+        <input id="tripName" placeholder="pl. Svájc 4 nap / Sítúra" style="margin-top:6px;" />
+        <div class="row" style="margin-top:10px;">
+          <select id="template">
+            <option value="city">City / business</option>
+            <option value="nature">Nature / hiking</option>
+            <option value="winter">Winter / ski</option>
+          </select>
+          <button id="addTrip" style="max-width:170px;">Létrehoz</button>
+        </div>
+      </div>
+
+      <div class="list" id="tripList"></div>
+
+      <div class="kpi" id="kpi"></div>
+
+      <div class="section">
+        <button id="exportBtn" class="secondary">Export JSON</button>
+        <div style="height:8px;"></div>
+        <input id="importFile" type="file" accept="application/json" />
+        <div class="muted" style="margin-top:8px;">Import: válassz egy korábbi export JSON-t.</div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="card">
+      <div id="emptyState" class="muted">Válassz vagy hozz létre egy tripet bal oldalt.</div>
+
+      <div id="tripView" style="display:none;">
+        <div class="row">
+          <div>
+            <div class="muted">Trip</div>
+            <input id="tripTitle" />
+          </div>
+          <div style="max-width:220px;">
+            <div class="muted">Műveletek</div>
+            <div class="row" style="margin-top:6px;">
+              <button id="addSection" class="secondary">+ Csoport</button>
+              <button id="deleteTrip" class="danger">Törlés</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section" style="margin-top:12px;">
+          <div class="muted">Új tétel</div>
+          <div class="row" style="margin-top:6px;">
+            <input id="newItemName" placeholder="pl. fogkefe / töltő / útlevél" />
+            <select id="newItemSection" style="max-width:260px;"></select>
+            <button id="addItem" style="max-width:150px;">Hozzáad</button>
+          </div>
+          <div class="muted" style="margin-top:8px;">Tipp: csinálj “Docs”, “Tech”, “Clothes”, “Hygiene” csoportokat.</div>
+        </div>
+
+        <div id="sections"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // --- Storage ---
+  const KEY = "trip_planner_v1";
+  const load = () => JSON.parse(localStorage.getItem(KEY) || "null") || { trips: [], activeId: null };
+  const save = (data) => localStorage.setItem(KEY, JSON.stringify(data));
+
+  // --- Templates ---
+  const TEMPLATES = {
+    city: {
+      sections: {
+        "Docs": ["útlevél/személyi", "bankkártya", "biztosítás", "szállás foglalás", "repjegy / jegyek"],
+        "Tech": ["telefon töltő", "powerbank", "fülhallgató", "laptop töltő"],
+        "Clothes": ["alsónemű", "póló", "nadrág", "zokni", "pulcsi"],
+        "Hygiene": ["fogkefe", "fogkrém", "dezodor", "borotva"]
+      }
+    },
+    nature: {
+      sections: {
+        "Docs": ["személyi", "bankkártya", "biztosítás"],
+        "Tech": ["telefon töltő", "powerbank", "fejlámpa"],
+        "Gear": ["esőkabát", "kulacs", "túracipő", "naptej", "sapka"],
+        "Food": ["snack", "magnézium", "protein"]
+      }
+    },
+    winter: {
+      sections: {
+        "Docs": ["személyi", "bankkártya", "biztosítás", "pályabérlet"],
+        "Ski": ["sí/snowboard", "bakancs", "sisak", "kesztyű", "szemüveg"],
+        "Clothes": ["thermo aláöltöző", "kabát", "nadrág", "zokni (sí)", "sapka"],
+        "Hygiene": ["fogkefe", "fogkrém", "ajkír", "hidratáló"]
+      }
+    }
+  };
+
+  // --- Helpers ---
+  const uid = () => Math.random().toString(16).slice(2) + Date.now().toString(16);
+  const el = (id) => document.getElementById(id);
+
+  function computeKPI(data) {
+    const trip = data.trips.find(t => t.id === data.activeId);
+    if (!trip) return { trips: data.trips.length, items: 0, done: 0 };
+    const items = Object.values(trip.sections).flat();
+    const done = items.filter(i => i.done).length;
+    return { trips: data.trips.length, items: items.length, done };
+  }
+
+  // --- Render ---
+  function render() {
+    const data = load();
+    const list = el("tripList");
+    list.innerHTML = "";
+
+    data.trips.forEach(t => {
+      const items = Object.values(t.sections).flat();
+      const done = items.filter(i => i.done).length;
+      const div = document.createElement("div");
+      div.className = "tripItem" + (t.id === data.activeId ? " active" : "");
+      div.innerHTML = `
+        <div>
+          <div style="font-weight:900;">${escapeHtml(t.name)}</div>
+          <div class="muted">${done}/${items.length} kész</div>
+        </div>
+        <span class="pill">${escapeHtml(t.template)}</span>
+      `;
+      div.onclick = () => { data.activeId = t.id; save(data); render(); };
+      list.appendChild(div);
+    });
+
+    const k = computeKPI(data);
+    el("kpi").innerHTML = `
+      <div class="k"><div class="v">${k.trips}</div><div class="l">trips</div></div>
+      <div class="k"><div class="v">${k.items}</div><div class="l">tételek</div></div>
+      <div class="k"><div class="v">${k.done}</div><div class="l">kész</div></div>
+    `;
+
+    const trip = data.trips.find(t => t.id === data.activeId);
+    el("emptyState").style.display = trip ? "none" : "block";
+    el("tripView").style.display = trip ? "block" : "none";
+
+    if (!trip) return;
+
+    el("tripTitle").value = trip.name;
+
+    // section dropdown
+    const secSel = el("newItemSection");
+    secSel.innerHTML = "";
+    Object.keys(trip.sections).forEach(s => {
+      const opt = document.createElement("option");
+      opt.value = s;
+      opt.textContent = s;
+      secSel.appendChild(opt);
+    });
+
+    // sections view
+    const secWrap = el("sections");
+    secWrap.innerHTML = "";
+    Object.entries(trip.sections).forEach(([secName, items]) => {
+      const block = document.createElement("div");
+      block.className = "section";
+      block.innerHTML = `
+        <div class="secHead">
+          <div style="font-weight:900;">${escapeHtml(secName)}</div>
+          <button class="secondary iconBtn" data-delsec="${escapeAttr(secName)}">Csoport törlés</button>
+        </div>
+        <div class="items" id="items-${escapeAttr(secName)}"></div>
+      `;
+      secWrap.appendChild(block);
+
+      const itemsEl = block.querySelector(`#items-${cssSafe(secName)}`);
+      items.forEach((it, idx) => {
+        const row = document.createElement("div");
+        row.className = "item" + (it.done ? " done" : "");
+        row.innerHTML = `
+          <input class="chk" type="checkbox" ${it.done ? "checked" : ""} data-toggle="${escapeAttr(secName)}::${idx}" />
+          <div class="itemName">${escapeHtml(it.name)}</div>
+          <button class="secondary iconBtn" data-up="${escapeAttr(secName)}::${idx}">↑</button>
+          <button class="secondary iconBtn" data-down="${escapeAttr(secName)}::${idx}">↓</button>
+          <button class="danger iconBtn" data-del="${escapeAttr(secName)}::${idx}">Törlés</button>
+        `;
+        itemsEl.appendChild(row);
+      });
+    });
+
+    // actions
+    el("tripTitle").oninput = () => {
+      trip.name = el("tripTitle").value.trim() || "Untitled trip";
+      save(data); render();
+    };
+
+    // delegate buttons
+    secWrap.onclick = (e) => {
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+
+      const del = target.getAttribute("data-del");
+      const up = target.getAttribute("data-up");
+      const down = target.getAttribute("data-down");
+      const delsec = target.getAttribute("data-delsec");
+
+      if (del) {
+        const [sec, idxStr] = del.split("::");
+        const idx = parseInt(idxStr, 10);
+        trip.sections[sec].splice(idx, 1);
+        save(data); render();
+      }
+      if (up) {
+        const [sec, idxStr] = up.split("::");
+        const idx = parseInt(idxStr, 10);
+        if (idx > 0) {
+          const arr = trip.sections[sec];
+          [arr[idx-1], arr[idx]] = [arr[idx], arr[idx-1]];
+          save(data); render();
+        }
+      }
+      if (down) {
+        const [sec, idxStr] = down.split("::");
+        const idx = parseInt(idxStr, 10);
+        const arr = trip.sections[sec];
+        if (idx < arr.length - 1) {
+          [arr[idx+1], arr[idx]] = [arr[idx], arr[idx+1]];
+          save(data); render();
+        }
+      }
+      if (delsec) {
+        const sec = delsec;
+        delete trip.sections[sec];
+        // ensure at least one section exists
+        if (Object.keys(trip.sections).length === 0) trip.sections["General"] = [];
+        save(data); render();
+      }
+    };
+
+    secWrap.onchange = (e) => {
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+      const toggle = target.getAttribute("data-toggle");
+      if (!toggle) return;
+      const [sec, idxStr] = toggle.split("::");
+      const idx = parseInt(idxStr, 10);
+      trip.sections[sec][idx].done = !!target.checked;
+      save(data); render();
+    };
+  }
+
+  // --- UI handlers ---
+  el("addTrip").onclick = () => {
+    const data = load();
+    const name = el("tripName").value.trim() || "Untitled trip";
+    const template = el("template").value;
+    const t = TEMPLATES[template] || TEMPLATES.city;
+
+    const sections = {};
+    for (const [sec, arr] of Object.entries(t.sections)) {
+      sections[sec] = arr.map(x => ({ name: x, done: false }));
+    }
+
+    const trip = { id: uid(), name, template, sections, createdAt: Date.now() };
+    data.trips.unshift(trip);
+    data.activeId = trip.id;
+    save(data);
+
+    el("tripName").value = "";
+    render();
+  };
+
+  el("addItem").onclick = () => {
+    const data = load();
+    const trip = data.trips.find(t => t.id === data.activeId);
+    if (!trip) return;
+
+    const name = el("newItemName").value.trim();
+    const sec = el("newItemSection").value;
+    if (!name) return;
+
+    if (!trip.sections[sec]) trip.sections[sec] = [];
+    trip.sections[sec].push({ name, done: false });
+    save(data);
+
+    el("newItemName").value = "";
+    render();
+  };
+
+  el("addSection").onclick = () => {
+    const data = load();
+    const trip = data.trips.find(t => t.id === data.activeId);
+    if (!trip) return;
+
+    const sec = prompt("Új csoport neve (pl. 'Pharmacy', 'Kids', 'Camera'):");
+    if (!sec) return;
+
+    if (!trip.sections[sec]) trip.sections[sec] = [];
+    save(data); render();
+  };
+
+  el("deleteTrip").onclick = () => {
+    const data = load();
+    const trip = data.trips.find(t => t.id === data.activeId);
+    if (!trip) return;
+
+    if (!confirm(`Törlöd ezt a tripet? (${trip.name})`)) return;
+    data.trips = data.trips.filter(t => t.id !== data.activeId);
+    data.activeId = data.trips[0]?.id || null;
+    save(data); render();
+  };
+
+  el("exportBtn").onclick = () => {
+    const data = load();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `trip-planner-export-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  el("importFile").onchange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (!parsed || !Array.isArray(parsed.trips)) throw new Error("Invalid file");
+      save(parsed);
+      render();
+      alert("Import OK ✅");
+    } catch {
+      alert("Hibás JSON fájl.");
+    } finally {
+      el("importFile").value = "";
+    }
+  };
+
+  // --- Utils ---
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, m => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m]));
+  }
+  function escapeAttr(s) {
+    return escapeHtml(s).replace(/\s/g, "_");
+  }
+  function cssSafe(s) {
+    return escapeAttr(s);
+  }
+
+  // PWA SW
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+    });
+  }
+
+  render();
+</script>
+</body>
+</html>
